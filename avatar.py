@@ -10,9 +10,11 @@ from dash.dependencies import Input, Output, State
 from PIL import Image, ImageDraw
 from googletrans import LANGUAGES, Translator
 import moviepy.editor as mp
+import json
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
 engine.setProperty("rate", 150) # Set speaking rate to 150 words per minute
+face_cascade = cv2.CascadeClassifier('haarcascades\haarcascade_frontalface_default.xml')
 # Initialize avatar image
 avatar_image = Image.open("avatar.png")
 # Define function for translating text
@@ -76,14 +78,30 @@ app.layout = html.Div([
     dcc.Dropdown(
         id="source-dropdown",
         options=[{"label": LANGUAGES[lang], "value": lang} for lang in LANGUAGES],
-        value="en"
+        value="en",
+        style={"flex":"1"} ,multi=False ,
+        clearable=False
     ),
     html.Label("Target Language:"),
     dcc.Dropdown(
         id="target-dropdown",
         options=[{"label": LANGUAGES[lang], "value": lang} for lang in LANGUAGES],
-        value="es"
+        value="es",style={"flex":"1"},multi=False ,
+        clearable=False
     ) ,
+         html.P("Enter Text To Translate:"),
+            dcc.Textarea( 
+                       id='text-input',
+                       value="",
+                       style={
+                               
+                               "width":"100%",
+                               "height":"100px",
+                               "resize":"none",
+                               "marginBottom":"10px"
+                       }
+            )
+            ,
           html.Label("Image Upload:") ,
           dcc.Upload(  
      id="image-upload",
@@ -141,7 +159,8 @@ def translate_and_create_video(n_clicks, text, source_language, target_language,
             image_clip = mp.ImageClip(np.array(image)).set_position(("center", "center")).set_duration(clip_duration)
             clip = mp.CompositeVideoClip([clip, image_clip])
             # Add mouth movement to video clip
-            fps = clip.fps
+            fps = clip.fps if clip.fps is not None else 25  # Set default fps to 25 if fps is None
+            frames = []
             for t in range(int(clip_duration * fps)):
                 frame = clip.get_frame(t / fps)
                 gray_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -153,18 +172,15 @@ def translate_and_create_video(n_clicks, text, source_language, target_language,
                     draw = ImageDraw.Draw(image)
                     draw.rectangle([(mouth_x1, mouth_y), (mouth_x2, mouth_y + 0.1 * h)], fill="white")
                 image_data = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                yield image_data
-            # Convert video clip to a base64-encoded data URI
-            video_file = io.BytesIO()
-            clip.write_videofile(video_file, audio=mp.AudioFileClip("silent.wav"), fps=fps, codec="libx264")
-            video_file.seek(0)
-            video_data = base64.b64encode(video_file.read()).decode("utf-8")
-            video_uri = "data:video/mp4;base64," + video_data
-
-            return video_uri
+                frames.append(image_data.tolist())
+            # Convert video frames to a base64-encoded JSON string
+            video_data = json.dumps(frames)
+            video_uri = "data:application/json;base64," + base64.b64encode(video_data.encode("utf-8")).decode("utf-8")
+            return {"type": "application/json", "src": video_uri}
         else:
             return None
-
+    else:
+        return None
 if __name__ == "__main__":
     app.run_server(debug=True, port =8000)
 
